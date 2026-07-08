@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sorteio e Apuração de Jurados</title>
+
+<!-- SheetJS: leitura e escrita de arquivos .xlsx no próprio navegador -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#F1EFE8; --surface:#FBFAF6; --ink:#232A26; --muted:#6B6F68; --faint:#9A9C93;
+    --line:#DBD8CD; --accent:#1B5E43; --accent-strong:#123F2D; --accent-soft:#E4EEE7;
+    --stamp:#A23B34; --stamp-soft:#F3E3E1; --amber:#8A6D1F; --amber-soft:#F3EBD3; --amber-line:#E3D6AC;
+    --radius:14px; --shadow:0 1px 2px rgba(35,42,38,.05), 0 10px 30px -18px rgba(35,42,38,.28);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;
+    font-family:"Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%, #EDEBE2 0%, transparent 60%), var(--paper);
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:32px 20px 72px}
+
+  header.masthead{display:flex;align-items:flex-start;gap:16px;padding-bottom:22px;margin-bottom:28px;border-bottom:1px solid var(--line)}
+  .seal{flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:1.5px solid var(--accent);display:grid;place-items:center;color:var(--accent);background:var(--surface)}
+  .seal svg{width:24px;height:24px}
+  .masthead h1{font-family:"Lora",Georgia,serif;font-weight:600;font-size:clamp(22px,4.4vw,30px);line-height:1.15;margin:0;letter-spacing:-.01em}
+  .masthead p{margin:5px 0 0;color:var(--muted);font-size:14px;max-width:64ch}
+
+  .step{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 22px 24px;margin-bottom:22px;transition:opacity .25s ease}
+  .step[aria-disabled="true"]{opacity:.5;pointer-events:none;filter:grayscale(.15)}
+  .step-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+  .step-num{font-size:15px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;width:30px;height:30px;display:grid;place-items:center;flex:0 0 auto;font-weight:600}
+  .step-head h2{font-size:16px;font-weight:600;margin:0;letter-spacing:-.005em}
+  .step-head .sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+
+  /* Upload */
+  .drop{border:1.5px dashed var(--line);border-radius:12px;background:var(--paper);padding:26px 20px;text-align:center;cursor:pointer;transition:border-color .18s ease, background .18s ease}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:var(--accent-soft)}
+  .drop .ico{color:var(--accent);margin-bottom:8px}
+  .drop strong{display:block;font-weight:600;font-size:15px}
+  .drop span{color:var(--muted);font-size:13px}
+  .drop em{color:var(--accent);font-style:normal;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+  .file-chip{display:none;align-items:center;gap:12px;margin-top:14px;background:var(--accent-soft);border:1px solid #CBE0D3;border-radius:10px;padding:12px 14px}
+  .file-chip.show{display:flex}
+  .file-chip .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  .file-chip .meta{flex:1;min-width:0}
+  .file-chip .name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file-chip .desc{color:var(--muted);font-size:12.5px}
+  .file-chip button{background:none;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .file-chip button:hover{border-color:var(--stamp);color:var(--stamp)}
+
+  /* Config do sorteio */
+  .cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:8px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.02em}
+  .field input,.field select{width:100%;border:1px solid var(--line);border-radius:9px;background:var(--paper);padding:9px 11px;font-family:inherit;font-size:14px;color:var(--ink)}
+  .field input[type=number]{font-family:"JetBrains Mono",monospace;font-weight:600}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .total-line{font-size:13px;color:var(--muted);margin:6px 0 2px}
+  .total-line b{font-family:"JetBrains Mono",monospace;color:var(--accent);font-weight:700}
+  .avail{font-family:"JetBrains Mono",monospace}
+
+  /* Bloco de ata / texto oficial */
+  .ata-wrap{margin:16px 0 6px}
+  .ata-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .ata-head span{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+  .ata-head a{font-size:12px;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  textarea.ata{width:100%;min-height:96px;resize:vertical;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;background:var(--paper);padding:13px 15px;font-family:"Lora",Georgia,serif;font-size:14.5px;line-height:1.6;color:var(--ink)}
+  textarea.ata:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+  .opts{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:14px 0 4px}
+  .check{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);cursor:pointer;user-select:none}
+  .check input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+  .used-chip{font-size:12.5px;color:var(--muted);font-family:"JetBrains Mono",monospace;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .used-chip b{color:var(--accent)}
+  .used-chip a{color:var(--stamp);cursor:pointer;text-decoration:underline;margin-left:6px}
+  .field-inline{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .field-inline input{max-width:220px;border:1px solid var(--line);border-radius:9px;background:var(--paper);padding:8px 10px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ink)}
+  .field-inline input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+  /* Botões */
+  .btn{font-family:inherit;font-weight:600;font-size:14px;cursor:pointer;border-radius:10px;padding:11px 18px;border:1px solid transparent;display:inline-flex;align-items:center;gap:8px;transition:transform .05s ease, background .18s ease}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-strong)}
+  .btn-primary:disabled{background:var(--faint);cursor:not-allowed}
+  .btn-ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn svg{width:16px;height:16px}
+  .btnrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .push{margin-left:auto}
+
+  /* Resultado do sorteio */
+  .draw-out{display:none;margin-top:20px}
+  .draw-out.show{display:block}
+  .panel{margin-top:18px}
+  .panel-title{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:0 0 9px}
+  .panel-title .tag{font-family:"JetBrains Mono",monospace;font-weight:700;border-radius:6px;padding:2px 8px;font-size:12px}
+  .tag-t{background:var(--accent-soft);color:var(--accent);border:1px solid #CBE0D3}
+  .tag-s{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line)}
+
+  .table-wrap{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  thead th{text-align:left;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:11px 14px;background:var(--paper);border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--accent-soft)}
+  .s-hover tbody tr:hover{background:var(--amber-soft)}
+  .col-ord{width:64px}
+  .ord-badge{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:13px;color:var(--accent);background:var(--accent-soft);border:1px solid #CBE0D3;border-radius:7px;padding:3px 8px;display:inline-block;min-width:34px;text-align:center}
+  .ord-badge.s{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line)}
+  .num-badge{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:14px;color:var(--ink)}
+  .name{font-weight:600}
+  td.extra{color:var(--muted);font-size:13px}
+
+  /* Apuração manual */
+  textarea.nums{width:100%;min-height:110px;resize:vertical;border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:15px;color:var(--ink);line-height:1.7;letter-spacing:.02em}
+  textarea.nums:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .hint{color:var(--faint);font-size:12.5px;margin-top:8px}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:14px}
+  .counter{font-size:13px;color:var(--muted);font-family:"JetBrains Mono",monospace;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+  .counter b{color:var(--accent);font-weight:700}
+
+  #mResults{display:none;margin-top:20px}
+  #mResults.show{display:block}
+  .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;min-width:120px;flex:1 1 120px}
+  .stat .n{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:24px;line-height:1}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:4px}
+  .stat.found .n{color:var(--accent)} .stat.miss .n{color:var(--stamp)} .stat.total .n{color:var(--ink)}
+  .res-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+  .seg button{border:none;background:none;font-family:inherit;font-size:13px;color:var(--muted);padding:8px 13px;cursor:pointer;font-weight:500}
+  .seg button.on{background:var(--accent);color:#fff}
+
+  .notfound{margin-top:16px;background:var(--stamp-soft);border:1px solid #E7CBC8;border-radius:12px;padding:14px 16px;display:none}
+  .notfound.show{display:block}
+  .notfound h3{margin:0 0 6px;font-size:13.5px;color:var(--stamp);font-weight:600}
+  .notfound .list{font-family:"JetBrains Mono",monospace;font-size:13px;color:#7d2f29;display:flex;flex-wrap:wrap;gap:6px}
+  .notfound .list span{background:#fff;border:1px solid #E7CBC8;border-radius:6px;padding:2px 8px}
+
+  .alert{display:none;background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);border-radius:10px;padding:11px 14px;font-size:13px;margin-top:14px}
+  .alert.show{display:block}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:14px;box-shadow:0 12px 30px -12px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s ease, transform .2s ease;z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  footer{color:var(--faint);font-size:12px;text-align:center;margin-top:34px;line-height:1.7}
+  footer code{font-family:"JetBrains Mono",monospace;color:var(--muted)}
+
+  @media (max-width:560px){
+    .wrap{padding:22px 14px 60px}
+    .step{padding:18px 16px 20px}
+    thead th,tbody td{padding:9px 10px}
+    td.extra,thead th.extra{display:none}
+    .push{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="seal" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v18M4 8h16M6 8l-3 6a3 3 0 0 0 6 0L6 8zM18 8l-3 6a3 3 0 0 0 6 0l-3-6z"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Sorteio e Apuração de Jurados</h1>
+      <p>Importe a lista completa de jurados, realize o sorteio de titulares e suplentes (com opção de refazer sem repetir) e baixe a relação final — tudo no seu navegador.</p>
+    </div>
+  </header>
+
+  <!-- Etapa 1 — Importar -->
+  <section class="step" id="step1">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <div>
+        <h2>Importar a lista de jurados</h2>
+        <p class="sub">Arquivo <b>.xlsx</b> com as colunas de número e nome (as demais colunas são mantidas na exportação).</p>
+      </div>
+    </div>
+
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Selecionar arquivo xlsx">
+      <div class="ico" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+        </svg>
+      </div>
+      <strong>Arraste a lista aqui</strong>
+      <span>ou <em>clique para selecionar</em> — formato .xlsx</span>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+
+    <div class="file-chip" id="fileChip">
+      <span class="dot"></span>
+      <div class="meta">
+        <div class="name" id="fileName">arquivo.xlsx</div>
+        <div class="desc" id="fileDesc">—</div>
+      </div>
+      <button id="fileRemove" type="button">Trocar</button>
+    </div>
+    <div class="alert" id="importAlert"></div>
+  </section>
+
+  <!-- Etapa 2 — Sorteio automático -->
+  <section class="step" id="step2" aria-disabled="true">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <div>
+        <h2>Sortear titulares e suplentes</h2>
+        <p class="sub">Sorteio aleatório da lista importada. <span class="avail" id="availNote"></span></p>
+      </div>
+    </div>
+
+    <div class="cfg">
+      <div class="field"><label for="cfgTit">Titulares</label><input type="number" id="cfgTit" min="0" value="25"></div>
+      <div class="field"><label for="cfgSup">Suplentes</label><input type="number" id="cfgSup" min="0" value="10"></div>
+      <div class="field"><label for="cfgMes">Mês da sessão</label>
+        <select id="cfgMes">
+          <option>Janeiro</option><option>Fevereiro</option><option>Março</option><option>Abril</option>
+          <option>Maio</option><option>Junho</option><option>Julho</option><option>Agosto</option>
+          <option selected>Setembro</option><option>Outubro</option><option>Novembro</option><option>Dezembro</option>
+        </select>
+      </div>
+      <div class="field"><label for="cfgAno">Ano</label><input type="number" id="cfgAno" value="2026"></div>
+      <div class="field"><label for="cfgComarca">Comarca (opcional)</label><input type="text" id="cfgComarca" placeholder="ex.: Ribeira do Pombal"></div>
+    </div>
+    <p class="total-line">Total do sorteio: <b id="totalLine">35</b> jurados</p>
+
+    <div class="ata-wrap">
+      <div class="ata-head">
+        <span>TEXTO DO SORTEIO (editável — vai no topo da planilha exportada)</span>
+        <a id="ataReset">Restaurar texto padrão</a>
+      </div>
+      <textarea class="ata" id="ataText"></textarea>
+    </div>
+
+    <div class="opts">
+      <label class="check"><input type="checkbox" id="noRepeat" checked> Não repetir jurados já sorteados nesta sessão</label>
+      <span class="field-inline">Excluir nº (opcional): <input type="text" id="excludeNums" placeholder="ex.: 5, 33, 40"></span>
+      <span class="used-chip" id="usedChip" style="display:none"></span>
+    </div>
+
+    <div class="btnrow">
+      <button class="btn btn-primary" id="drawBtn" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 14h6v6h-6z"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1.2" fill="currentColor" stroke="none"/><path d="M14 4h6v6"/><path d="M20 4l-6 6"/></svg>
+        Realizar sorteio
+      </button>
+      <button class="btn btn-ghost" id="redrawBtn" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+        Refazer sorteio
+      </button>
+      <button class="btn btn-ghost push" id="drawCopyBtn" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        Copiar
+      </button>
+      <button class="btn btn-primary" id="drawDownloadBtn" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M5 21h14"/></svg>
+        Baixar planilha
+      </button>
+    </div>
+
+    <div class="alert" id="drawAlert"></div>
+
+    <div class="draw-out" id="drawOut">
+      <div class="panel">
+        <p class="panel-title"><span class="tag tag-t" id="tagT">25</span> Jurados titulares</p>
+        <div class="table-wrap"><table><thead id="tHead"></thead><tbody id="tBody"></tbody></table></div>
+      </div>
+      <div class="panel">
+        <p class="panel-title"><span class="tag tag-s" id="tagS">10</span> Jurados suplentes</p>
+        <div class="table-wrap s-hover"><table><thead id="sHead"></thead><tbody id="sBody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Etapa 3 — Apuração por números informados -->
+  <section class="step" id="step3" aria-disabled="true">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <div>
+        <h2>Apurar por números informados</h2>
+        <p class="sub">Alternativa para conferir um sorteio manual: informe os números e obtenha os nomes na ordem digitada.</p>
+      </div>
+    </div>
+
+    <textarea class="nums" id="numbers" placeholder="Ex.:  12, 45, 3, 200&#10;Um por linha também funciona. Aceita intervalos como 10-15."></textarea>
+    <p class="hint">Separadores: vírgula, espaço, ponto e vírgula ou quebra de linha. Intervalos: <code style="font-family:inherit">10-15</code>.</p>
+
+    <div class="controls">
+      <span class="counter" id="counter"><b>0</b> números válidos</span>
+      <button class="btn btn-primary push" id="searchBtn" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Apurar
+      </button>
+    </div>
+
+    <div id="mResults">
+      <div class="summary" id="summary"></div>
+      <div class="res-toolbar">
+        <div class="seg" id="sortSeg">
+          <button data-sort="ordem" class="on">Ordem informada</button>
+          <button data-sort="numero">Nº crescente</button>
+        </div>
+        <button class="btn btn-ghost push" id="copyBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          Copiar nomes
+        </button>
+        <button class="btn btn-primary" id="downloadBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M5 21h14"/></svg>
+          Baixar planilha
+        </button>
+      </div>
+      <div class="table-wrap"><table><thead id="resHead"></thead><tbody id="resBody"></tbody></table></div>
+      <div class="notfound" id="notfound">
+        <h3>Números informados que não constam na lista</h3>
+        <div class="list" id="notfoundList"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Processamento 100% no seu navegador — nenhum dado é enviado para servidores. Sorteio com gerador aleatório criptográfico.<br>
+    A leitura/escrita de <code>.xlsx</code> usa a biblioteca SheetJS (requer conexão à internet para carregar).
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================ Estado ============================ */
+const state = {
+  headers:[], records:[], byNum:new Map(),
+  nameCol:-1, numberCol:-1, extraCols:[],
+  usedNumbers:new Set(),         // números já sorteados nesta sessão de uso
+  draw:{titulares:[],suplentes:[]},
+  ataEdited:false,
+  results:[], notFound:[], sortMode:'ordem'
+};
+const $ = (id)=>document.getElementById(id);
+
+/* ============================ Utilidades ============================ */
+function norm(s){return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();}
+function fmtCell(v){
+  if(v==null) return '';
+  if(v instanceof Date && !isNaN(v)){const d=String(v.getDate()).padStart(2,'0');const m=String(v.getMonth()+1).padStart(2,'0');return `${d}/${m}/${v.getFullYear()}`;}
+  return String(v);
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400);}
+function showAlert(el,msg){el.textContent=msg;el.classList.add('show');}
+function clearAlert(el){el.classList.remove('show');}
+
+/* Sorteio justo: Fisher–Yates com gerador criptográfico */
+function randInt(max){
+  if(window.crypto&&crypto.getRandomValues&&max>0){
+    const buf=new Uint32Array(1);const limit=Math.floor(0xFFFFFFFF/max)*max;let x;
+    do{crypto.getRandomValues(buf);x=buf[0];}while(x>=limit);
+    return x%max;
+  }
+  return Math.floor(Math.random()*max);
+}
+function secureShuffle(arr){const a=arr.slice();for(let i=a.length-1;i>0;i--){const j=randInt(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+/* Número por extenso (pt-BR, 0–9999) */
+function extenso(n){
+  n=Math.floor(Math.abs(n));
+  if(n===0) return 'zero';
+  const u=['','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  const dez=['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  const cem=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+  const ate999=(x)=>{
+    if(x===0) return ''; if(x===100) return 'cem';
+    const parts=[];const c=Math.floor(x/100),r=x%100;
+    if(c>0) parts.push(cem[c]);
+    if(r>0){ if(r<20) parts.push(u[r]); else{const d=Math.floor(r/10),un=r%10;parts.push(un>0?dez[d]+' e '+u[un]:dez[d]);} }
+    return parts.join(' e ');
+  };
+  if(n<1000) return ate999(n);
+  const mil=Math.floor(n/1000),resto=n%1000;
+  let s=mil===1?'mil':ate999(mil)+' mil';
+  if(resto>0) s += (resto<100||resto%100===0)?' e '+ate999(resto):', '+ate999(resto);
+  return s;
+}
+
+/* Parser de números (aceita vírgula, espaço, ; , quebra de linha e intervalos 10-15) */
+function parseNumberString(raw){
+  const prepared=String(raw||'').replace(/(\d+)\s*(?:a|até|ate|à)\s+(\d+)/gi,'$1-$2');
+  const tokens=prepared.split(/[\s,;]+/).filter(Boolean);
+  const order=[],seen=new Set(),duplicates=[];
+  const push=(n)=>{if(!Number.isFinite(n))return;if(seen.has(n)){duplicates.push(n);return;}seen.add(n);order.push(n);};
+  for(const tk of tokens){
+    const r=tk.match(/^(\d+)-(\d+)$/);
+    if(r){let a=+r[1],b=+r[2];if(a>b)[a,b]=[b,a];for(let n=a;n<=b;n++)push(n);}
+    else if(/^\d+$/.test(tk)) push(+tk);
+  }
+  return {order,duplicates};
+}
+
+/* ============================ Etapa 1 — leitura ============================ */
+const drop=$('drop'), fileInput=$('fileInput');
+drop.addEventListener('click',()=>fileInput.click());
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInput.click();}});
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)readFile(f);});
+fileInput.addEventListener('change',e=>{const f=e.target.files[0];if(f)readFile(f);});
+$('fileRemove').addEventListener('click',resetFile);
+
+function resetFile(){
+  state.headers=[];state.records=[];state.byNum.clear();
+  state.nameCol=state.numberCol=-1;state.extraCols=[];
+  state.usedNumbers.clear();state.draw={titulares:[],suplentes:[]};
+  fileInput.value='';
+  $('fileChip').classList.remove('show');
+  $('step2').setAttribute('aria-disabled','true');
+  $('step3').setAttribute('aria-disabled','true');
+  $('drawOut').classList.remove('show');
+  ['redrawBtn','drawCopyBtn','drawDownloadBtn'].forEach(id=>$(id).style.display='none');
+  $('mResults').classList.remove('show');
+  clearAlert($('importAlert'));
+  updateUsedChip();refreshCounter();
+}
+
+function readFile(file){
+  clearAlert($('importAlert'));
+  if(typeof XLSX==='undefined'){showAlert($('importAlert'),'Biblioteca de leitura (.xlsx) não carregou. Verifique a conexão com a internet e recarregue a página.');return;}
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+      if(!buildFromWorkbook(wb)){showAlert($('importAlert'),'Não encontrei colunas de "Número" e "Nome". Verifique o cabeçalho da planilha.');return;}
+      $('fileName').textContent=file.name;
+      $('fileDesc').textContent=`${state.records.length} jurados · nº: "${state.headers[state.numberCol]}" · nome: "${state.headers[state.nameCol]}"`;
+      $('fileChip').classList.add('show');
+      $('availNote').textContent=`${state.records.length} jurados disponíveis na lista.`;
+      $('step2').setAttribute('aria-disabled','false');
+      $('step3').setAttribute('aria-disabled','false');
+      state.usedNumbers.clear();updateUsedChip();
+      validateDrawConfig();refreshCounter();
+    }catch(err){console.error(err);showAlert($('importAlert'),'Falha ao ler o arquivo. Confirme que é um .xlsx válido.');}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function buildFromWorkbook(wb){
+  for(const name of wb.SheetNames){
+    const aoa=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,blankrows:false});
+    if(detectAndBuild(aoa)) return true;
+  }
+  return false;
+}
+function detectAndBuild(aoa){
+  let headerRow=-1;
+  for(let i=0;i<Math.min(aoa.length,15);i++){const row=aoa[i]||[];if(row.some(c=>norm(c)==='nome'||norm(c).startsWith('nome '))){headerRow=i;break;}}
+  if(headerRow===-1) return false;
+  const headers=(aoa[headerRow]||[]).map(h=>h==null?'':String(h).trim());
+  const nameCol=headers.findIndex(h=>norm(h)==='nome');
+  if(nameCol===-1) return false;
+  let numberCol=-1;
+  for(let c=0;c<nameCol;c++){if(/^(numero|n[º°o]|num|ordem)$/.test(norm(headers[c]))){numberCol=c;break;}}
+  if(numberCol===-1) numberCol=0;
+  const extraCols=[];headers.forEach((h,c)=>{const n=norm(h);if(n==='cpf'||n==='bairro')extraCols.push(c);});
+  const records=[],byNum=new Map();
+  for(let i=headerRow+1;i<aoa.length;i++){
+    const row=aoa[i]||[];const rawNum=row[numberCol];
+    const num=typeof rawNum==='number'?rawNum:parseInt(String(rawNum).replace(/[^\d]/g,''),10);
+    const name=fmtCell(row[nameCol]).trim();
+    if(!Number.isFinite(num)||!name) continue;
+    const rec={num,name,cells:headers.map((_,c)=>fmtCell(row[c]))};
+    records.push(rec);if(!byNum.has(num))byNum.set(num,rec);
+  }
+  if(records.length===0) return false;
+  Object.assign(state,{headers,records,byNum,nameCol,numberCol,extraCols});
+  return true;
+}
+
+/* ============================ Etapa 2 — sorteio ============================ */
+const cfgTit=$('cfgTit'),cfgSup=$('cfgSup'),cfgMes=$('cfgMes'),cfgAno=$('cfgAno'),cfgComarca=$('cfgComarca');
+const ataEl=$('ataText'),noRepeatEl=$('noRepeat'),excludeEl=$('excludeNums');
+
+function cfgNums(){
+  const t=Math.max(0,parseInt(cfgTit.value,10)||0);
+  const s=Math.max(0,parseInt(cfgSup.value,10)||0);
+  return {t,s,total:t+s};
+}
+function ataDefault(){
+  const {t,s,total}=cfgNums();
+  const comarca=cfgComarca.value.trim();
+  const local=comarca?`na Comarca de ${comarca}`:'nesta comarca';
+  return `${total} (${extenso(total)}) jurados que servirão na primeira sessão do Tribunal do Júri e nas seguintes que vierem a se realizar ${local}, no mês de ${cfgMes.value} e seguintes de ${cfgAno.value}, tendo sido sorteados os seguintes jurados, sendo ${extenso(t)} titulares e ${extenso(s)} suplentes.`;
+}
+function syncAta(){ if(!state.ataEdited) ataEl.value=ataDefault(); }
+ataEl.addEventListener('input',()=>{state.ataEdited=true;});
+$('ataReset').addEventListener('click',()=>{state.ataEdited=false;syncAta();});
+
+[cfgTit,cfgSup,cfgMes,cfgAno,cfgComarca].forEach(el=>el.addEventListener('input',()=>{onCfgChange();}));
+function onCfgChange(){
+  const {t,s,total}=cfgNums();
+  $('totalLine').textContent=total;
+  $('tagT').textContent=t;$('tagS').textContent=s;
+  syncAta();validateDrawConfig();
+}
+function validateDrawConfig(){
+  const disabled=$('step2').getAttribute('aria-disabled')==='true';
+  const {total}=cfgNums();
+  const ok=!disabled && total>0 && total<=state.records.length;
+  $('drawBtn').disabled=!ok;
+  if(!disabled && total>state.records.length){
+    showAlert($('drawAlert'),`O total do sorteio (${total}) é maior que os ${state.records.length} jurados da lista.`);
+  } else if($('drawAlert').textContent.startsWith('O total')) clearAlert($('drawAlert'));
+}
+
+function updateUsedChip(){
+  const chip=$('usedChip');
+  if(state.usedNumbers.size===0){chip.style.display='none';return;}
+  chip.style.display='';
+  chip.innerHTML=`<b>${state.usedNumbers.size}</b> já sorteados nesta sessão<a id="clearUsed">limpar histórico</a>`;
+  $('clearUsed').addEventListener('click',()=>{state.usedNumbers.clear();updateUsedChip();toast('Histórico de sorteios limpo.');});
+}
+
+$('drawBtn').addEventListener('click',runDraw);
+$('redrawBtn').addEventListener('click',runDraw);
+
+function runDraw(){
+  clearAlert($('drawAlert'));
+  const {t,s,total}=cfgNums();
+  if(total<=0){showAlert($('drawAlert'),'Informe pelo menos um jurado para sortear.');return;}
+
+  const exclude=new Set(parseNumberString(excludeEl.value).order);
+  if(noRepeatEl.checked) state.usedNumbers.forEach(n=>exclude.add(n));
+
+  const pool=state.records.filter(r=>!exclude.has(r.num));
+  if(pool.length<total){
+    showAlert($('drawAlert'),`Jurados disponíveis insuficientes: são necessários ${total}, mas há apenas ${pool.length} fora das exclusões/histórico. Desmarque "não repetir" ou limpe o histórico.`);
+    return;
+  }
+
+  const chosen=secureShuffle(pool).slice(0,total);
+  const titulares=chosen.slice(0,t);
+  const suplentes=chosen.slice(t,t+s);
+  chosen.forEach(r=>state.usedNumbers.add(r.num));
+  state.draw={titulares,suplentes};
+
+  renderDraw();
+  updateUsedChip();
+  $('redrawBtn').style.display='';
+  $('drawCopyBtn').style.display='';
+  $('drawDownloadBtn').style.display='';
+  $('drawOut').classList.add('show');
+  $('drawOut').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function drawHeadHtml(){
+  const extra=state.extraCols.map(c=>`<th class="extra">${escapeHtml(state.headers[c])}</th>`).join('');
+  return `<tr><th class="col-ord">Ordem</th><th>Nº</th><th>Nome</th>${extra}</tr>`;
+}
+function drawRowsHtml(list,cls){
+  return list.map((r,i)=>{
+    const extra=state.extraCols.map(c=>`<td class="extra">${escapeHtml(r.cells[c]||'—')}</td>`).join('');
+    return `<tr><td class="col-ord"><span class="ord-badge ${cls}">${i+1}º</span></td><td><span class="num-badge">${r.num}</span></td><td class="name">${escapeHtml(r.name)}</td>${extra}</tr>`;
+  }).join('');
+}
+function renderDraw(){
+  $('tHead').innerHTML=drawHeadHtml();
+  $('sHead').innerHTML=drawHeadHtml();
+  $('tBody').innerHTML=drawRowsHtml(state.draw.titulares,'');
+  $('sBody').innerHTML=drawRowsHtml(state.draw.suplentes,'s');
+}
+
+/* Copiar resultado do sorteio */
+$('drawCopyBtn').addEventListener('click',()=>{
+  const lines=[ataEl.value.trim(),''];
+  lines.push('TITULARES:');
+  state.draw.titulares.forEach((r,i)=>lines.push(`${i+1}º\t${r.num}\t${r.name}`));
+  lines.push('','SUPLENTES:');
+  state.draw.suplentes.forEach((r,i)=>lines.push(`${i+1}º\t${r.num}\t${r.name}`));
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>toast('Sorteio copiado.')).catch(()=>toast('Não foi possível copiar.'));
+});
+
+/* Baixar planilha do sorteio */
+$('drawDownloadBtn').addEventListener('click',()=>{
+  if(!state.draw.titulares.length && !state.draw.suplentes.length){toast('Realize um sorteio primeiro.');return;}
+  const header=['ORDEM',...state.headers];
+  const W=header.length;
+  const aoa=[];
+  const merges=[];
+  const put=(row)=>aoa.push(row);
+
+  put([ataEl.value.trim()]);              merges.push({s:{r:0,c:0},e:{r:0,c:W-1}});
+  put([]);
+  let r=aoa.length; put(['JURADOS TITULARES']); merges.push({s:{r,c:0},e:{r,c:W-1}});
+  put(header);
+  state.draw.titulares.forEach((rec,i)=>put([i+1,...rec.cells]));
+  put([]);
+  r=aoa.length; put(['JURADOS SUPLENTES']); merges.push({s:{r,c:0},e:{r,c:W-1}});
+  put(header);
+  state.draw.suplentes.forEach((rec,i)=>put([i+1,...rec.cells]));
+
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges']=merges;
+  ws['!cols']=header.map((h,i)=>{
+    if(i===0) return {wch:8};
+    const idx=i-1;let max=String(h||'').length;
+    [...state.draw.titulares,...state.draw.suplentes].forEach(rec=>max=Math.max(max,String(rec.cells[idx]||'').length));
+    return {wch:Math.min(Math.max(max+2,8),45)};
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Sorteio');
+  XLSX.writeFile(wb,`sorteio_jurados_titulares_suplentes_${stamp()}.xlsx`);
+  toast(`Planilha do sorteio (${state.draw.titulares.length}+${state.draw.suplentes.length}) baixada.`);
+});
+
+function stamp(){const d=new Date();return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;}
+
+/* ============================ Etapa 3 — apuração manual ============================ */
+const numbersEl=$('numbers');
+numbersEl.addEventListener('input',refreshCounter);
+function refreshCounter(){
+  const disabled=$('step3').getAttribute('aria-disabled')==='true';
+  const {order}=parseNumberString(numbersEl.value);
+  $('counter').innerHTML=`<b>${order.length}</b> número${order.length===1?'':'s'} válido${order.length===1?'':'s'}`;
+  $('searchBtn').disabled=disabled||order.length===0;
+}
+$('searchBtn').addEventListener('click',()=>{
+  const {order,duplicates}=parseNumberString(numbersEl.value);
+  state.results=[];state.notFound=[];
+  order.forEach((num,idx)=>{const rec=state.byNum.get(num);if(rec)state.results.push({order:idx+1,num,record:rec});else state.notFound.push(num);});
+  renderManual();
+  if(duplicates.length) toast(`${duplicates.length} número(s) repetido(s) foram ignorados.`);
+  $('mResults').classList.add('show');
+  $('mResults').scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+$('sortSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;state.sortMode=b.dataset.sort;[...$('sortSeg').children].forEach(x=>x.classList.toggle('on',x===b));renderManual();});
+function sortedResults(){const a=[...state.results];a.sort((x,y)=>state.sortMode==='numero'?x.num-y.num:x.order-y.order);return a;}
+function renderManual(){
+  const total=state.results.length+state.notFound.length;
+  $('summary').innerHTML=`
+    <div class="stat found"><div class="n">${state.results.length}</div><div class="l">Encontrados</div></div>
+    <div class="stat miss"><div class="n">${state.notFound.length}</div><div class="l">Não encontrados</div></div>
+    <div class="stat total"><div class="n">${total}</div><div class="l">Informados</div></div>`;
+  const extraHeads=state.extraCols.map(c=>`<th class="extra">${escapeHtml(state.headers[c])}</th>`).join('');
+  $('resHead').innerHTML=`<tr><th class="col-ord">Ordem</th><th>Nº</th><th>Nome</th>${extraHeads}</tr>`;
+  const rows=sortedResults().map(({order,num,record})=>{
+    const extras=state.extraCols.map(c=>`<td class="extra">${escapeHtml(record.cells[c]||'—')}</td>`).join('');
+    return `<tr><td class="col-ord"><span class="ord-badge">${order}º</span></td><td><span class="num-badge">${num}</span></td><td class="name">${escapeHtml(record.name)}</td>${extras}</tr>`;
+  }).join('');
+  $('resBody').innerHTML=rows||`<tr><td colspan="9" style="padding:22px;text-align:center;color:var(--muted)">Nenhum número encontrado na lista.</td></tr>`;
+  if(state.notFound.length){$('notfoundList').innerHTML=state.notFound.map(n=>`<span>${n}</span>`).join('');$('notfound').classList.add('show');}
+  else $('notfound').classList.remove('show');
+}
+$('copyBtn').addEventListener('click',()=>{
+  const list=sortedResults().map(({order,num,record})=>`${order}º\t${num}\t${record.name}`).join('\n');
+  if(!list){toast('Nada para copiar.');return;}
+  navigator.clipboard.writeText(list).then(()=>toast('Lista copiada.')).catch(()=>toast('Não foi possível copiar.'));
+});
+$('downloadBtn').addEventListener('click',()=>{
+  const rows=sortedResults();
+  if(!rows.length){toast('Nada para exportar.');return;}
+  const title=state.sortMode==='numero'?'JURADOS APURADOS (ordem por número)':'JURADOS APURADOS (ordem informada)';
+  const header=['ORDEM',...state.headers];
+  const aoa=[[title],header,...rows.map(({order,record})=>[order,...record.cells])];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:header.length-1}}];
+  ws['!cols']=header.map((h,i)=>{if(i===0)return{wch:8};const idx=i-1;let max=String(h||'').length;rows.forEach(({record})=>max=Math.max(max,String(record.cells[idx]||'').length));return{wch:Math.min(Math.max(max+2,8),45)};});
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Apurados');
+  XLSX.writeFile(wb,`jurados_apurados_${stamp()}.xlsx`);
+  toast(`Planilha com ${rows.length} jurados baixada.`);
+});
+
+/* init */
+onCfgChange();refreshCounter();
+</script>
+</body>
+</html>
